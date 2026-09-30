@@ -1,0 +1,194 @@
+================================================================================
+AEGISHEALTH INDIA — HEALTH COMMAND & LOGISTICS INTELLIGENCE PLATFORM
+COMPLETE TECHNICAL ARCHITECTURE, SOURCE CODE & SYSTEM SPECIFICATION DOCUMENT
+================================================================================
+Generated Date: 2026-09-30
+Platform Version: 2.4.0 (PWA + Offline IndexedDB + Gemini AI Copilot)
+Primary Tech Stack: React 18, Vite, TypeScript, Tailwind CSS, Leaflet GIS, Express Proxy, @google/genai SDK, IndexedDB
+
+--------------------------------------------------------------------------------
+SECTION 1: OVERVIEW & CORE ARCHITECTURE
+--------------------------------------------------------------------------------
+AegisHealth India is an enterprise-grade AI-powered health supply chain and command tower platform built for Primary Healthcare Centres (PHCs) across India (Tamil Nadu, Uttar Pradesh, Assam, Rajasthan). 
+
+Core Capabilities:
+1. Real-time GIS Command Control Tower: OpenStreetMap visualization of ~100 PHCs with color-blind accessible non-color shape indicators (triangle for warning, square for critical).
+2. Offline Service Worker & IndexedDB Cache: Service worker precaching of app assets + IndexedDB local persistence (`AegisHealthDB`) for stock levels, daily footfall, and offline voice/vision stock updates when connectivity is lost in remote field areas.
+3. Multi-Lingual AI Voice Stock Entry: Gemini audio extraction (Hindi, Tamil, Assamese, Bengali, Marathi, English) into structured stock updates.
+4. Vision Stock Photo OCR: AI camera image analysis for medicine box counts and stock register logs.
+5. Algorithmic Inter-PHC Redistribution Engine: Optimizes stock rebalancing based on transit distance (km), ETA, donor safety buffer, and recipient cover gain.
+6. Outbreak & Disaster Scenario Simulator: Stress-tests network against Monsoon Floods, Heatwaves, Snakebite Emergency, and Cholera Outbreaks.
+7. Decentralized Federated Learning Monitor: Tracks privacy-preserving state-node model training and WAPE accuracy without centralizing patient raw data.
+8. 4 User Login Personas (RBAC):
+   - PHC Medical Officer (Frontline)
+   - District Health Officer (DHO)
+   - State Mission Director (Directorate)
+   - National Command Tower (Full Access)
+9. Dual Theme Engine:
+   - Command Room (High-Contrast Dark Theme)
+   - Field Duty / Sunlight Mode (High Outdoor Visibility Light Theme)
+10. Sanjeevani AI Copilot: Embedded multi-turn Gemini chatbot grounded on site capabilities, telemetry data, and navigation.
+
+--------------------------------------------------------------------------------
+SECTION 2: INDEXEDDB OFFLINE STORE IMPLEMENTATION (src/engine/offlineStore.ts)
+--------------------------------------------------------------------------------
+```typescript
+import { PHC, StockRecord, Alert } from '../types';
+
+const DB_NAME = 'AegisHealthDB';
+const DB_VERSION = 1;
+
+export interface OfflineSyncItem {
+  id: string;
+  type: 'voice_report' | 'vision_report' | 'stock_update';
+  phcId: string;
+  payload: any;
+  timestamp: string;
+  synced: boolean;
+}
+
+function openDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) {
+      reject(new Error('IndexedDB is not supported in this browser.'));
+      return;
+    }
+
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+
+      if (!db.objectStoreNames.contains('phcs')) {
+        db.createObjectStore('phcs', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('stockRecords')) {
+        db.createObjectStore('stockRecords', { keyPath: 'phcId' });
+      }
+      if (!db.objectStoreNames.contains('alerts')) {
+        db.createObjectStore('alerts', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('offlineSyncQueue')) {
+        db.createObjectStore('offlineSyncQueue', { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function savePhcsToDB(phcs: PHC[]): Promise<void> {
+  try {
+    const db = await openDatabase();
+    const tx = db.transaction('phcs', 'readwrite');
+    const store = tx.objectStore('phcs');
+    phcs.forEach((p) => store.put(p));
+  } catch (err) {
+    console.warn('Failed to save PHCs to IndexedDB:', err);
+  }
+}
+
+export async function saveStockRecordsToDB(records: Record<string, StockRecord>): Promise<void> {
+  try {
+    const db = await openDatabase();
+    const tx = db.transaction('stockRecords', 'readwrite');
+    const store = tx.objectStore('stockRecords');
+    Object.values(records).forEach((r) => store.put(r));
+  } catch (err) {
+    console.warn('Failed to save stock records to IndexedDB:', err);
+  }
+}
+```
+
+--------------------------------------------------------------------------------
+SECTION 3: PWA SERVICE WORKER CONFIGURATION (vite.config.ts)
+--------------------------------------------------------------------------------
+```typescript
+import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
+
+export default defineConfig(() => {
+  return {
+    plugins: [
+      react(),
+      tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'icon.svg'],
+        manifest: {
+          id: '/',
+          name: 'AegisHealth India — Health Command & Logistics',
+          short_name: 'AegisHealth',
+          description: 'AI-driven health supply chain platform for primary healthcare centres in India.',
+          theme_color: '#0f172a',
+          background_color: '#020617',
+          display: 'standalone',
+          start_url: '/',
+          scope: '/',
+          icons: [
+            {
+              src: '/pwa-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/tile\.openstreetmap\.org\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'osm-tiles-cache',
+                expiration: {
+                  maxEntries: 500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
+        },
+        devOptions: {
+          enabled: true,
+          type: 'module',
+        },
+      }),
+    ],
+  };
+});
+```
+
+--------------------------------------------------------------------------------
+SECTION 4: SANJEEVANI AI COPILOT CHATBOT (src/components/FrontPageChatWidget.tsx)
+--------------------------------------------------------------------------------
+Embedded floating multi-turn Gemini chatbot grounded on site features, telemetry dataset (~100 PHCs across Tamil Nadu, Uttar Pradesh, Assam, Rajasthan), and navigation instructions.
+
+--------------------------------------------------------------------------------
+SECTION 5: BACKEND EXPRESS GEMINI PROXY (server.ts)
+--------------------------------------------------------------------------------
+Endpoints:
+- POST `/api/gemini/voice-report`: Transcribes audio, extracts medicine name, stock count, bed occupancy, staff count.
+- POST `/api/gemini/stock-photo`: Computer vision photo OCR for inventory registers.
+- POST `/api/gemini/explain-alert`: Generates clinical stockout risk explanation and dispatch order.
+- POST `/api/gemini/assist`: Multi-turn conversational chatbot grounded in control tower state summary with server-side RBAC model routing (gemini-3.1-pro-preview, gemini-3.8-flash, gemini-3.5-flash, gemini-3.1-flash-lite).
+- POST `/api/gemini/scenario-brief`: Emergency disaster scenario summary.
+- POST `/api/gemini/transfer-order`: Formal inter-PHC transport dispatch order generation.
+
+================================================================================
+END OF CODE DOCUMENTATION REPORT
+================================================================================

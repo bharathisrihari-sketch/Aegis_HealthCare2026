@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* Leaflet Dark Command Room Tile Styling (Keyless OpenStreetMap) */
+.leaflet-container {
+  background: #020617 !important;
+}
+
+.leaflet-tile-pane {
+  filter: brightness(0.6) invert(1) contrast(2.5) hue-rotate(200deg) saturate(0.3);
+}
+
+.leaflet-control-zoom a {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}

@@ -1,0 +1,6 @@
+{
+  "name": "AegisHealth India — Federated AI Health Control Tower",
+  "description": "Real-time visibility, demand forecasting, stock-out early warnings, automated redistribution, and federated learning for India's Primary Health Centre network.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

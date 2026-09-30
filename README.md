@@ -1,11 +1,29 @@
-<div align="center">
+# AegisHealth India — Health Command & Supply Chain Platform
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+AI-driven health supply chain platform for Primary Healthcare Centres (PHCs) in India. Built with React 19, TypeScript, Vite, Tailwind CSS, IndexedDB PWA offline store, and Google GenAI (Gemini) SDK.
 
-  <h1>Built with AI Studio</h2>
+## Deployment & Production Server Setup
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+When deploying to serverless container hosts (e.g., Google Cloud Run, Render, AWS App Runner):
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1. **Build Step**:
+   ```bash
+   npm run build
+   ```
+   This compiles the Vite client bundle into `dist/` and builds the Node.js Express server into `dist-server/server.js` using `esbuild`.
 
-</div>
+2. **Production Dependency Install Step (CRITICAL)**:
+   ```bash
+   npm install --omit=dev
+   ```
+   *Note*: `esbuild server.ts --bundle --packages=external` keeps node_modules external. The hosting container **must** run `npm install --omit=dev` (or equivalent production install) before starting the server, or the server will fail with missing module errors.
+
+3. **Start Command**:
+   ```bash
+   npm start
+   ```
+   The Express server listens on `0.0.0.0` using `process.env.PORT` (defaults to 3000).
+
+## Environment Variables
+- `GEMINI_API_KEY`: Google Gemini API key for live AI Copilot features.
+- `PORT`: (Optional) Dynamic port for Cloud Run container health checks.
